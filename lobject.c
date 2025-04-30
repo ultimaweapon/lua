@@ -19,6 +19,7 @@
 
 #include "lua.h"
 
+#include "lapi.h"
 #include "lctype.h"
 #include "ldebug.h"
 #include "ldo.h"
@@ -414,11 +415,14 @@ typedef struct BuffFS {
 static void pushstr (BuffFS *buff, const char *str, size_t lstr) {
   lua_State *L = buff->L;
   setsvalue2s(L, L->top.p, luaS_newlstr(L, str, lstr));
-  L->top.p++;  /* may use one slot from EXTRA_STACK */
-  if (!buff->pushed)  /* no previous string on the stack? */
+  if (!buff->pushed) {  /* no previous string on the stack? */
     buff->pushed = 1;  /* now there is one */
-  else  /* join previous string with new one */
+    api_incr_top(L);
+  }
+  else {  /* join previous string with new one */
+    L->top.p++;  /* may use one slot from EXTRA_STACK */
     luaV_concat(L, 2);
+  }
 }
 
 
