@@ -7,15 +7,24 @@
 #ifndef lapi_h
 #define lapi_h
 
+#include <stdlib.h>
 
 #include "llimits.h"
 #include "lstate.h"
 
 
 /* Increments 'L->top.p', checking for stack overflows */
-#define api_incr_top(L)	{L->top.p++; \
-			 api_check(L, L->top.p <= L->ci->top.p, \
-					"stack overflow");}
+l_sinline void api_incr_top (lua_State *L) {
+  L->top.p++;
+  if (L->top.p > L->ci->top.p) {
+    global_State *g = G(L);
+    if (g->panic) {
+      setsvalue2s(L, L->top.p++, g->stackoverflow); /* use EXTRA_STACK */
+      g->panic(L);
+    }
+    abort();
+  }
+}
 
 
 /*

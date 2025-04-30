@@ -130,6 +130,8 @@ void luaS_init (lua_State *L) {
   /* pre-create memory-error message */
   g->memerrmsg = luaS_newliteral(L, MEMERRMSG);
   luaC_fix(L, obj2gco(g->memerrmsg));  /* it should never be collected */
+  g->stackoverflow = luaS_newliteral(L, "stack overflow");
+  luaC_fix(L, obj2gco(g->stackoverflow));
   for (i = 0; i < STRCACHE_N; i++)  /* fill cache with valid strings */
     for (j = 0; j < STRCACHE_M; j++)
       g->strcache[i][j] = g->memerrmsg;
