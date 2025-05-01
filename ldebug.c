@@ -832,7 +832,7 @@ l_noret luaG_errormsg (lua_State *L) {
     L->top.p++;  /* assume EXTRA_STACK */
     luaD_callnoyield(L, L->top.p - 2, 1);  /* call it */
   }
-  luaD_throw(L, LUA_ERRRUN);
+  luaD_throw(L, LUA_ERRRUN, true);
 }
 
 
@@ -955,7 +955,7 @@ int luaG_traceexec (lua_State *L, const Instruction *pc) {
     if (counthook)
       L->hookcount = 1;  /* undo decrement to zero */
     ci->callstatus |= CIST_HOOKYIELD;  /* mark that it yielded */
-    luaD_throw(L, LUA_YIELD);
+    luaD_throw(L, LUA_YIELD, false);
   }
   return 1;  /* keep 'trap' on */
 }

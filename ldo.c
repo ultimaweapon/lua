@@ -112,25 +112,26 @@ void luaD_seterrorobj (lua_State *L, int errcode, StkId oldtop) {
 }
 
 
-l_noret luaD_throw (lua_State *L, int errcode) {
+l_noret luaD_throw (lua_State *L, int errcode, bool haserr) {
+  global_State *g = G(L);
   if (L->errorJmp) {  /* thread has an error handler? */
     L->errorJmp->status = errcode;  /* set status */
-    LUAI_THROW(L, L->errorJmp);  /* jump to it */
+    g->unwinding++;
+    if (haserr) {
+      g->gcstp |= GCSTPGC;  /* prevent GC while unwind */
+      L->top.p--;
+      throw L->top.p;
+    }
+    else
+      throw L->errorJmp;  /* jump to it */
   }
   else {  /* thread has no error handler */
-    global_State *g = G(L);
     errcode = luaE_resetthread(L, errcode);  /* close all upvalues */
-    if (g->mainthread->errorJmp) {  /* main thread has a handler? */
-      setobjs2s(L, g->mainthread->top.p++, L->top.p - 1);  /* copy error obj. */
-      luaD_throw(g->mainthread, errcode);  /* re-throw in main thread */
+    if (g->panic) {  /* panic function? */
+      lua_unlock(L);
+      g->panic(L);  /* call panic function (last chance to jump out) */
     }
-    else {  /* no handler at all; abort */
-      if (g->panic) {  /* panic function? */
-        lua_unlock(L);
-        g->panic(L);  /* call panic function (last chance to jump out) */
-      }
-      abort();
-    }
+    abort();
   }
 }
 
@@ -141,9 +142,18 @@ int luaD_rawrunprotected (lua_State *L, Pfunc f, void *ud) {
   lj.status = LUA_OK;
   lj.previous = L->errorJmp;  /* chain new error handler */
   L->errorJmp = &lj;
-  LUAI_TRY(L, &lj,
-    (*f)(L, ud);
-  );
+  try {
+    f(L, ud);
+  } catch (StkId e) {
+    setobjs2s(L, L->top.p++, e);
+    if (!--G(L)->unwinding)
+      G(L)->gcstp &= ~GCSTPGC;  /* allow gc */
+  } catch (lua_longjmp *) {
+    G(L)->unwinding--;
+  } catch (...) {
+    /* rust panic */
+    abort();
+  }
   L->errorJmp = lj.previous;  /* restore old error handler */
   L->nCcalls = oldnCcalls;
   return lj.status;
@@ -247,7 +257,7 @@ int luaD_growstack (lua_State *L, int n, int raiseerror) {
        a stack error; cannot grow further than that. */
     lua_assert(stacksize(L) == ERRORSTACKSIZE);
     if (raiseerror)
-      luaD_throw(L, LUA_ERRERR);  /* error inside message handler */
+      luaD_throw(L, LUA_ERRERR, false);  /* error inside message handler */
     return 0;  /* if not 'raiseerror', just signal it */
   }
   else if (n < LUAI_MAXSTACK) {  /* avoids arithmetic overflows */
@@ -895,7 +905,7 @@ LUA_API int lua_yieldk (lua_State *L, int nresults, lua_KContext ctx,
   else {
     if ((ci->u.c.k = k) != NULL)  /* is there a continuation? */
       ci->u.c.ctx = ctx;  /* save context */
-    luaD_throw(L, LUA_YIELD);
+    luaD_throw(L, LUA_YIELD, false);
   }
   lua_assert(ci->callstatus & CIST_HOOKED);  /* must be inside a hook */
   lua_unlock(L);
@@ -984,7 +994,7 @@ static void checkmode (lua_State *L, const char *mode, const char *x) {
   if (mode && strchr(mode, x[0]) == NULL) {
     luaO_pushfstring(L,
        "attempt to load a %s chunk (mode is '%s')", x, mode);
-    luaD_throw(L, LUA_ERRSYNTAX);
+    luaD_throw(L, LUA_ERRSYNTAX, true);
   }
 }
 
